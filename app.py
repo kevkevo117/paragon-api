@@ -1,6 +1,11 @@
 from flask import Flask, jsonify, request
+from models import db, Character
 
 app = Flask(__name__)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///paragon.db"
+
+db.init_app(app)
 
 cities = [
     {"name": "Fortitudo", "region": "Paragon"},
@@ -26,6 +31,21 @@ characters = [
         "city": "Fortitudo"
     }
 ]
+
+with app.app_context():
+
+    if Character.query.count() == 0:
+
+        starter = Character(
+            name="Aldric",
+            character_class="Paladin",
+            city="Fortitudo"
+        )
+
+        db.session.add(starter)
+        db.session.commit()
+
+    db.create_all()
 
 @app.route("/")
 def home():
@@ -67,6 +87,26 @@ def get_character(character_name):
             return character
 
     return {"error": "Character not found"}, 404
+
+@app.route("/dbcharacters")
+def get_db_characters():
+
+    characters = Character.query.all()
+
+    results = []
+
+    for character in characters:
+        results.append({
+            "id": character.id,
+            "name": character.name,
+            "class": character.character_class,
+            "city": character.city
+        })
+
+    return jsonify(results)
+
+with app.app_context():
+    db.create_all()
 
 if __name__ == "__main__":
     app.run(debug=True)
