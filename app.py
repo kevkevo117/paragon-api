@@ -18,17 +18,20 @@ characters = [
     {
         "name": "Solomon",
         "race": "Aasimar",
-        "city": "Fortitudo"
+        "city": "Fortitudo",
+        "character_class": "Paladin"
     },
     {
         "name": "Auryx",
         "race": "Dragon",
-        "city": "Fortitudo"
+        "city": "Fortitudo",
+        "character_class": "Sorcerer"
     },
     {
         "name": "Raviel",
         "race": "Goliath",
-        "city": "Fortitudo"
+        "city": "Fortitudo",
+        "character_class": "Barbarian"
     }
 ]
 
@@ -38,6 +41,7 @@ with app.app_context():
 
         starter = Character(
             name="Aldric",
+            race="Human",
             character_class="Paladin",
             city="Fortitudo"
         )
@@ -57,18 +61,96 @@ def get_cities():
 
 @app.route("/characters")
 def get_characters():
-    return jsonify(characters)
+
+    characters = Character.query.all()
+
+    return jsonify([
+        {
+            "id": c.id,
+            "name": c.name,
+            "class": c.character_class,
+            "city": c.city,
+            "race": c.race
+        }
+        for c in characters
+    ])
+
+@app.route("/characters/<int:character_id>", methods=["PUT"])
+def update_character(character_id):
+
+    character = Character.query.get(character_id)
+
+    if not character:
+        return {"error": "Character not found"}, 404
+
+    data = request.get_json()
+
+    character.name = data.get("name", character.name)
+    character.race = data.get("race", character.race)
+    character.character_class = data.get(
+        "class",
+        character.character_class
+    )
+    character.city = data.get("city", character.city)
+
+    db.session.commit()
+
+    return {
+        "message": "Character updated",
+        "character": {
+            "id": character.id,
+            "name": character.name,
+            "race": character.race,
+            "class": character.character_class,
+            "city": character.city
+        }
+    }
+
+@app.route("/characters/<int:character_id>", methods=["DELETE"])
+def delete_character(character_id):
+
+    character = Character.query.get(character_id)
+
+    if not character:
+        return {"error": "Character not found"}, 404
+
+    db.session.delete(character)
+    db.session.commit()
+
+    return {
+        "message": f"Character {character.name} deleted"
+    }
 
 @app.route("/characters", methods=["POST"])
 def create_character():
 
-    new_character = request.json
+    data = request.get_json()
 
-    new_character["id"] = len(characters) + 1
+    required_fields = ["name", "race", "class", "city"]
 
-    characters.append(new_character)
+    for field in required_fields:
+        if field not in data:
+            return {
+                "error": f"Missing required field: {field}"
+            }, 400
 
-    return new_character, 201
+    character = Character(
+        name=data["name"],
+        race=data["race"],
+        character_class=data["class"],
+        city=data["city"]
+    )
+
+    db.session.add(character)
+    db.session.commit()
+
+    return {
+        "id": character.id,
+        "name": character.name,
+        "class": character.character_class,
+        "city": character.city,
+        "race": character.race
+    }, 201
 
 @app.route("/cities/<city_name>")
 def get_city(city_name):
@@ -79,34 +161,38 @@ def get_city(city_name):
 
     return {"error": "City not found"}, 404
 
-@app.route("/characters/<character_name>")
-def get_character(character_name):
+@app.route("/characters/<int:character_id>")
+def get_character(character_id):
 
-    for character in characters:
-        if character["name"].lower() == character_name.lower():
-            return character
+    character = Character.query.get(character_id)
 
-    return {"error": "Character not found"}, 404
+    if not character:
+        return {"error": "Character not found"}, 404
 
-@app.route("/dbcharacters")
-def get_db_characters():
+    return {
+        "id": character.id,
+        "name": character.name,
+        "race": character.race,
+        "class": character.character_class,
+        "city": character.city
+    }
 
-    characters = Character.query.all()
-
-    results = []
-
-    for character in characters:
-        results.append({
-            "id": character.id,
-            "name": character.name,
-            "class": character.character_class,
-            "city": character.city
-        })
-
-    return jsonify(results)
 
 with app.app_context():
+
     db.create_all()
+
+    if Character.query.count() == 0:
+
+        starter = Character(
+            name="Aldric",
+            race="Human",
+            character_class="Paladin",
+            city="Fortitudo"
+        )
+
+        db.session.add(starter)
+        db.session.commit()
 
 if __name__ == "__main__":
     app.run(debug=True)
