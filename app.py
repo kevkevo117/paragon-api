@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, request
-from models import db, Character
+from models import Kingdom, db, Character, City
 
 app = Flask(__name__)
 
@@ -7,49 +7,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///paragon.db"
 
 db.init_app(app)
 
-cities = [
-    {"name": "Fortitudo", "region": "Paragon"},
-    {"name": "Unitatem", "region": "Paragon"},
-    {"name": "Simultas", "region": "Paragon"},
-    {"name": "Aeternitas", "region": "Paragon"}
-]
 
-characters = [
-    {
-        "name": "Solomon",
-        "race": "Aasimar",
-        "city": "Fortitudo",
-        "character_class": "Paladin"
-    },
-    {
-        "name": "Auryx",
-        "race": "Dragon",
-        "city": "Fortitudo",
-        "character_class": "Sorcerer"
-    },
-    {
-        "name": "Raviel",
-        "race": "Goliath",
-        "city": "Fortitudo",
-        "character_class": "Barbarian"
-    }
-]
-
-with app.app_context():
-
-    if Character.query.count() == 0:
-
-        starter = Character(
-            name="Aldric",
-            race="Human",
-            character_class="Paladin",
-            city="Fortitudo"
-        )
-
-        db.session.add(starter)
-        db.session.commit()
-
-    db.create_all()
 
 @app.route("/")
 def home():
@@ -57,7 +15,34 @@ def home():
 
 @app.route("/cities")
 def get_cities():
-    return jsonify(cities)
+    cities = City.query.all()
+
+    return jsonify([
+        {
+            "id": c.id,
+            "name": c.name,
+            "kingdom": c.kingdom.name
+        }
+        for c in cities
+    ])
+
+@app.route("/cities/<int:city_id>/characters")
+def city_characters(city_id):
+
+    city = City.query.get(city_id)
+
+    if not city:
+        return {"error": "City not found"}, 404
+
+    return jsonify([
+        {
+            "id": char.id,
+            "name": char.name,
+            "race": char.race,
+            "class": char.character_class
+        }
+        for char in city.characters
+    ])
 
 @app.route("/characters")
 def get_characters():
@@ -135,11 +120,11 @@ def create_character():
             }, 400
 
     character = Character(
-        name=data["name"],
-        race=data["race"],
-        character_class=data["class"],
-        city=data["city"]
-    )
+    name=data["name"],
+    race=data["race"],
+    character_class=data["class"],
+    city_id=data["city_id"]
+)
 
     db.session.add(character)
     db.session.commit()
@@ -152,14 +137,7 @@ def create_character():
         "race": character.race
     }, 201
 
-@app.route("/cities/<city_name>")
-def get_city(city_name):
 
-    for city in cities:
-        if city["name"].lower() == city_name.lower():
-            return city
-
-    return {"error": "City not found"}, 404
 
 @app.route("/characters/<int:character_id>")
 def get_character(character_id):
@@ -177,6 +155,35 @@ def get_character(character_id):
         "city": character.city
     }
 
+@app.route("/kingdoms")
+def get_kingdoms():
+
+    kingdoms = Kingdom.query.all()
+
+    return jsonify([
+        {
+            "id": k.id,
+            "name": k.name,
+            "cities": [c.name for c in k.cities]
+        }
+        for k in kingdoms
+    ])
+
+
+@app.route("/kingdoms/<int:kingdom_id>")
+def get_kingdom(kingdom_id):
+
+    kingdom = Kingdom.query.get(kingdom_id)
+
+    if not kingdom:
+        return {"error": "Kingdom not found"}, 404
+
+    return {
+        "id": kingdom.id,
+        "name": kingdom.name,
+        "cities": [c.name for c in kingdom.cities]
+    }
+
 
 with app.app_context():
 
@@ -188,7 +195,7 @@ with app.app_context():
             name="Aldric",
             race="Human",
             character_class="Paladin",
-            city="Fortitudo"
+            city_id=1
         )
 
         db.session.add(starter)
