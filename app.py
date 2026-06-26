@@ -1,12 +1,17 @@
 from flask import Flask, jsonify, request
-from models import Kingdom, db, Character, City
+from models import Kingdom, db, Character, City, User
+from flask_jwt_extended import JWTManager
+from flask_jwt_extended import jwt_required
+from werkzeug.security import generate_password_hash, check_password_hash
+
 
 app = Flask(__name__)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///paragon.db"
+app.config["JWT_SECRET_KEY"] = "super-secret"  # Change this in production
 
 db.init_app(app)
-
+jwt = JWTManager(app)
 
 
 @app.route("/")
@@ -61,6 +66,7 @@ def get_characters():
     ])
 
 @app.route("/characters/<int:character_id>", methods=["PUT"])
+@jwt_required()
 def update_character(character_id):
 
     character = Character.query.get(character_id)
@@ -92,6 +98,7 @@ def update_character(character_id):
     }
 
 @app.route("/characters/<int:character_id>", methods=["DELETE"])
+@jwt_required()
 def delete_character(character_id):
 
     character = Character.query.get(character_id)
@@ -107,6 +114,7 @@ def delete_character(character_id):
     }
 
 @app.route("/characters", methods=["POST"])
+@jwt_required()
 def create_character():
 
     data = request.get_json()
@@ -185,21 +193,69 @@ def get_kingdom(kingdom_id):
     }
 
 
+@app.route("/register", methods=["POST"])
+def register():
+
+    data = request.get_json()
+
+    required_fields = ["username", "password"]
+
+    for field in required_fields:
+        if field not in data:
+            return {
+                "error": f"Missing required field: {field}"
+            }, 400
+
+    if User.query.filter_by(username=data["username"]).first():
+        return {
+            "error": "Username already exists"
+        }, 409
+
+    hashed_password = generate_password_hash(data["password"])
+
+    user = User(
+        username=data["username"],
+        password=hashed_password
+    )
+
+    db.session.add(user)
+    db.session.commit()
+
+    return {
+        "message": "User registered successfully"
+    }, 201
+
+
 with app.app_context():
 
     db.create_all()
 
-    if Character.query.count() == 0:
+    kingdom = Kingdom.query.first()
 
+    if kingdom is None:
+        kingdom = Kingdom(name="Paragon")
+        db.session.add(kingdom)
+        db.session.commit()
+
+    city = City.query.first()
+
+    if city is None:
+        city = City(
+            name="Fortitudo",
+            kingdom_id=kingdom.id
+        )
+        db.session.add(city)
+        db.session.commit()
+
+    if Character.query.count() == 0:
         starter = Character(
             name="Aldric",
             race="Human",
             character_class="Paladin",
-            city_id=1
+            city_id=city.id
         )
 
         db.session.add(starter)
         db.session.commit()
-
 if __name__ == "__main__":
     app.run(debug=True)
