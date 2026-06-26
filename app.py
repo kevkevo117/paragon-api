@@ -1,7 +1,10 @@
 from flask import Flask, jsonify, request
 from models import Kingdom, db, Character, City, User
-from flask_jwt_extended import JWTManager
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import (
+    JWTManager,
+    jwt_required,
+    create_access_token
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -34,7 +37,7 @@ def get_cities():
 @app.route("/cities/<int:city_id>/characters")
 def city_characters(city_id):
 
-    city = City.query.get(city_id)
+    city = db.session.get(City, city_id)
 
     if not city:
         return {"error": "City not found"}, 404
@@ -59,8 +62,8 @@ def get_characters():
             "id": c.id,
             "name": c.name,
             "class": c.character_class,
-            "city": c.city,
-            "race": c.race
+            "race": c.race,
+            "city": c.city.name
         }
         for c in characters
     ])
@@ -69,7 +72,7 @@ def get_characters():
 @jwt_required()
 def update_character(character_id):
 
-    character = Character.query.get(character_id)
+    character = db.session.get(Character, character_id)
 
     if not character:
         return {"error": "Character not found"}, 404
@@ -82,7 +85,10 @@ def update_character(character_id):
         "class",
         character.character_class
     )
-    character.city = data.get("city", character.city)
+
+    
+    if "city_id" in data:
+        character.city_id = data["city_id"]
 
     db.session.commit()
 
@@ -93,7 +99,7 @@ def update_character(character_id):
             "name": character.name,
             "race": character.race,
             "class": character.character_class,
-            "city": character.city
+            "city": character.city.name
         }
     }
 
@@ -101,7 +107,7 @@ def update_character(character_id):
 @jwt_required()
 def delete_character(character_id):
 
-    character = Character.query.get(character_id)
+    character = db.session.get(Character, character_id)
 
     if not character:
         return {"error": "Character not found"}, 404
@@ -119,7 +125,7 @@ def create_character():
 
     data = request.get_json()
 
-    required_fields = ["name", "race", "class", "city"]
+    required_fields = ["name", "race", "class", "city_id"]
 
     for field in required_fields:
         if field not in data:
@@ -127,12 +133,16 @@ def create_character():
                 "error": f"Missing required field: {field}"
             }, 400
 
+    city = db.session.get(City, data["city_id"])
+    if city is None:
+        return {"error": "City not found"}, 404
+
     character = Character(
-    name=data["name"],
-    race=data["race"],
-    character_class=data["class"],
-    city_id=data["city_id"]
-)
+        name=data["name"],
+        race=data["race"],
+        character_class=data["class"],
+        city_id=data["city_id"]
+    )
 
     db.session.add(character)
     db.session.commit()
@@ -141,16 +151,15 @@ def create_character():
         "id": character.id,
         "name": character.name,
         "class": character.character_class,
-        "city": character.city,
+        "city": character.city.name,
         "race": character.race
     }, 201
-
 
 
 @app.route("/characters/<int:character_id>")
 def get_character(character_id):
 
-    character = Character.query.get(character_id)
+    character = db.session.get(Character, character_id)
 
     if not character:
         return {"error": "Character not found"}, 404
@@ -160,7 +169,7 @@ def get_character(character_id):
         "name": character.name,
         "race": character.race,
         "class": character.character_class,
-        "city": character.city
+        "city": character.city.name
     }
 
 @app.route("/kingdoms")
@@ -181,7 +190,7 @@ def get_kingdoms():
 @app.route("/kingdoms/<int:kingdom_id>")
 def get_kingdom(kingdom_id):
 
-    kingdom = Kingdom.query.get(kingdom_id)
+    kingdom = db.session.get(Kingdom, kingdom_id)
 
     if not kingdom:
         return {"error": "Kingdom not found"}, 404
@@ -191,6 +200,29 @@ def get_kingdom(kingdom_id):
         "name": kingdom.name,
         "cities": [c.name for c in kingdom.cities]
     }
+
+
+@app.route("/login", methods=["POST"])
+def login():
+
+    data = request.get_json()
+
+    required_fields = ["username", "password"]
+
+    for field in required_fields:
+        if field not in data:
+            return {
+                "error": f"Missing required field: {field}"
+            }, 400
+
+    user = User.query.filter_by(username=data["username"]).first()
+
+    if not user or not check_password_hash(user.password, data["password"]):
+        return {"error": "Invalid username or password"}, 401
+
+    access_token = create_access_token(identity=str(user.id))
+
+    return {"access_token": access_token}, 200
 
 
 @app.route("/register", methods=["POST"])
@@ -230,6 +262,7 @@ with app.app_context():
 
     db.create_all()
 
+    
     kingdom = Kingdom.query.first()
 
     if kingdom is None:
@@ -257,5 +290,6 @@ with app.app_context():
 
         db.session.add(starter)
         db.session.commit()
+
 if __name__ == "__main__":
     app.run(debug=True)
